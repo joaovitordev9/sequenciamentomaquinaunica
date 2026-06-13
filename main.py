@@ -1,5 +1,11 @@
-from interface import abrir_interface
+﻿import tkinter as tk
+from interface import InterfacePrincipal
+from data_base import criar_banco
 
+criar_banco()
 
-if __name__ == "__main__":
-    abrir_interface()
+root = tk.Tk()
+
+app = InterfacePrincipal(root)
+
+root.mainloop()

@@ -1,288 +1,491 @@
 import tkinter as tk
-from pathlib import Path
-from tkinter import messagebox, ttk
+from tkinter import ttk
 
-from tksheet import Sheet
+from data_base import listar_chapas, inserir_chapa, deletar_chapa, inserir_pedido, listar_pedidos, deletar_pedido, listar_chapas_por_pedido, listar_setups, atualizar_setup
 
-from dados import Pedido
-from gerador_dat import gerar_dat
-from matrizes import (
-    converter_matriz_para_int,
-    multiplicar_matriz_jobs,
-    preenche_matriz_setup_completa,
-)
-from solver_pulp import resolver_pedido_com_pulp
+class InterfacePrincipal:
 
+    def __init__(self, root):
+        self.root = root
 
-PASTA_PROJETO = Path(__file__).resolve().parent
-PASTA_PULP = PASTA_PROJETO / "pulp"
-CAMINHO_DAT = PASTA_PULP / "sq.dat"
-CAMINHO_RELATORIO = PASTA_PROJETO / "relatorio_resultado.txt"
+        self.root.title("Sequenciamento")
+        self.root.geometry("500x300")
 
+        self.criar_menu()
 
-def formatar_numero(valor):
-    if valor == int(valor):
-        return str(int(valor))
-    return f"{valor:.2f}"
+    def criar_menu(self):
 
+        tk.Button(
+            self.root,
+            text="Chapas",
+            width=30,
+            command=self.abrir_janela_chapas
+        ).pack(pady=10)
 
-def montar_resumo_otimo(pedido, caminho_dat, resultado, matriz_quantidades):
-    if resultado.objetivo is None:
-        objetivo = "Nao identificado"
-    else:
-        objetivo = formatar_numero(resultado.objetivo)
+        tk.Button(
+            self.root,
+            text="Cadastrar Pedidos",
+            width=30,
+            command=self.abrir_janela_pedidos
+        ).pack(pady=10)
 
-    # Ordena os jobs pela ordem em que comecam na maquina.
-    sequencia = []
-    for job in resultado.inicios:
-        sequencia.append((resultado.inicios[job], job))
-    sequencia.sort()
+        tk.Button(
+            self.root,
+            text="Cadastrar Setups",
+            width=30
+        ,
+            command=self.abrir_janela_setups
+        ).pack(pady=10)
 
-    total_antecipacao = sum(resultado.antecipacoes.values())
-    total_atraso = sum(resultado.atrasos.values())
-    custo_antecipacao = total_antecipacao * pedido.custo_antecipacao
-    custo_atraso = total_atraso * pedido.custo_atraso
+        tk.Button(
+            self.root,
+            text="Resolver Modelo",
+            width=30
+        ).pack(pady=10)
 
-    # Soma quanto produzir de cada chapa, somando todos os lotes.
-    quantidades_por_chapa = [0] * pedido.qtd_chapas
-    for linha in matriz_quantidades:
-        for coluna in range(len(linha)):
-            quantidades_por_chapa[coluna] += linha[coluna]
+    def abrir_janela_chapas(self):
+        JanelaChapas(self.root)
+    def abrir_janela_pedidos(self):
+        JanelaPedidos(self.root)
+    def abrir_janela_setups(self):
+        JanelaSetups(self.root)
 
-    linhas = [
-        "RELATORIO DE PROGRAMACAO DA PRODUCAO",
-        "",
-        "Resumo da recomendacao",
-        "Foi encontrada a melhor programacao possivel para os dados informados.",
-        f"Custo total estimado da programacao: R$ {objetivo}",
-        f"Custo por antecipacao: R$ {formatar_numero(custo_antecipacao)}",
-        f"Custo por atraso: R$ {formatar_numero(custo_atraso)}",
-        f"Total de tempo antecipado: {formatar_numero(total_antecipacao)}",
-        f"Total de tempo em atraso: {formatar_numero(total_atraso)}",
-        "",
-        "Quantidade recomendada por item",
-    ]
+class JanelaChapas:
 
-    for indice in range(pedido.qtd_chapas):
-        quantidade = quantidades_por_chapa[indice]
-        linhas.append(f"Chapa {indice + 1}: produzir {quantidade} unidade(s).")
+    def __init__(self, parent):
 
-    linhas.append("")
-    linhas.append("Decisoes calculadas pelo sistema")
+        self.window = tk.Toplevel(parent)
 
-    posicao = 1
-    for inicio, job in sequencia:
-        partes = job[1:].split("C")          # "L1C2" -> ["1", "2"]
-        lote = int(partes[0]) - 1
-        chapa = int(partes[1]) - 1
+        self.window.title("Cadastro de Chapas")
+        self.window.geometry("600x400")
 
-        quantidade = matriz_quantidades[lote][chapa]
-        tempo = pedido.tempo_processamento_job[lote][chapa]
-        prazo = pedido.prazo_entrega_job[lote][chapa]
-        termino = inicio + tempo
-        atraso = resultado.atrasos[job]
-        antecipacao = resultado.antecipacoes[job]
+        tk.Label(
+            self.window,
+            text="Nome"
+        ).pack()
 
-        situacao = "no prazo"
-        if atraso > 0:
-            situacao = f"com atraso de {formatar_numero(atraso)}"
-        elif antecipacao > 0:
-            situacao = f"com antecipacao de {formatar_numero(antecipacao)}"
+        self.nome = tk.Entry(self.window)
+        self.nome.pack()
 
-        linhas.append(
-            f"{posicao}. Lote {partes[0]} - Chapa {partes[1]}: produzir {quantidade} unidade(s), "
-            f"iniciar no tempo {formatar_numero(inicio)}, "
-            f"terminar no tempo {formatar_numero(termino)}, "
-            f"prazo {formatar_numero(prazo)} ({situacao})."
+        tk.Label(
+            self.window,
+            text="Tempo de Processamento"
+        ).pack()
+
+        self.tempo = tk.Entry(self.window)
+        self.tempo.pack()
+
+        tk.Button(
+            self.window,
+            text="Salvar",
+            command=self.salvar_chapa
+        ).pack(pady=10)
+
+        tk.Button(
+            self.window,
+            text="Excluir Selecionadas",
+            command=self.excluir_chapa
+        ).pack(pady=2)
+
+        # Lista de chapas
+        self.tabela = ttk.Treeview(
+            self.window,
+            columns=("id", "nome", "tempo"),
+            show="headings",
+            height=10
         )
-        posicao += 1
 
-    linhas.append("")
-    linhas.append(f"Relatorio salvo em: {CAMINHO_RELATORIO}")
-    linhas.append(f"Arquivo de dados usado no calculo: {caminho_dat}")
+        self.tabela.heading("id", text="ID")
+        self.tabela.heading("nome", text="Nome")
+        self.tabela.heading("tempo", text="Tempo")
 
-    return "\n".join(linhas)
+        self.tabela.column("id", width=50)
+        self.tabela.column("nome", width=250)
+        self.tabela.column("tempo", width=150)
 
+        self.tabela.pack(fill="both", expand=True, padx=10, pady=10)
 
-def atualizar_texto(widget, conteudo):
-    widget.configure(state="normal")
-    widget.delete("1.0", tk.END)
-    widget.insert(tk.END, conteudo)
-    widget.configure(state="disabled")
+        self.carregar_chapas()
 
+    def carregar_chapas(self):
+        # Limpa tabela existente
+        for item in self.tabela.get_children():
+            self.tabela.delete(item)
 
-def criar_tabela(pai, titulo, linhas, colunas, altura=150,
-                 nomes_linhas=None, nomes_colunas=None):
-    frame = ttk.LabelFrame(pai, text=titulo, padding=8)
-    frame.pack(fill="both", expand=True, pady=6)
-    dados = [["" for _ in range(colunas)] for _ in range(linhas)]
-    sheet = Sheet(frame, data=dados, height=altura,
-                  headers=nomes_colunas, row_index=nomes_linhas)
-    sheet.enable_bindings()
-    sheet.pack(fill="both", expand=True)
-    return sheet
+        chapas = listar_chapas()
 
+        for chapa in chapas:
+            self.tabela.insert("", tk.END, values=chapa)
 
-def configurar_diagonal_setup(sheet, tamanho):
-    celulas = []
-    for i in range(tamanho):
-        celulas.append((i, i))
-        sheet.set_cell_data(i, i, 0, redraw=False)
-    sheet.readonly_cells(cells=celulas, readonly=True, redraw=False)
-    sheet.highlight_cells(cells=celulas, bg="#e8e8e8", fg="#555555", redraw=True)
+    def salvar_chapa(self):
+        nome = self.nome.get().strip()
+        tempo_txt = self.tempo.get().strip()
 
+        if not nome or not tempo_txt:
+            return
 
-def abrir_interface():
-    root = tk.Tk()
-    root.title("Sequenciamento em Maquina Unica")
-    root.geometry("1050x720")
-
-    sheets = {}
-    entradas = {}
-
-    notebook = ttk.Notebook(root)
-    notebook.pack(fill="both", expand=True, padx=10, pady=10)
-
-    aba_dados = ttk.Frame(notebook, padding=12)
-    aba_matrizes = ttk.Frame(notebook, padding=12)
-    aba_resultado = ttk.Frame(notebook, padding=12)
-    aba_dat = ttk.Frame(notebook, padding=12)
-
-    notebook.add(aba_dados, text="Dados gerais")
-    notebook.add(aba_matrizes, text="Matrizes")
-    notebook.add(aba_resultado, text="Resultado otimo")
-    notebook.add(aba_dat, text="Arquivo .dat")
-
-    resultado_texto = tk.Text(aba_resultado, height=25, wrap="word")
-    resultado_texto.pack(fill="both", expand=True)
-
-    dat_texto = tk.Text(aba_dat, height=25, wrap="none")
-    dat_texto.pack(fill="both", expand=True)
-
-    def adicionar_campo(linha, texto, nome):
-        ttk.Label(aba_dados, text=texto).grid(row=linha, column=0, sticky="w", pady=6)
-        entrada = ttk.Entry(aba_dados, width=20)
-        entrada.grid(row=linha, column=1, sticky="w", pady=6, padx=(8, 0))
-        entradas[nome] = entrada
-
-    adicionar_campo(0, "Quantidade de lotes", "qtd_lote")
-    adicionar_campo(1, "Quantidade de chapas", "qtd_chapas")
-    adicionar_campo(2, "Custo de antecipacao", "custo_antecipacao")
-    adicionar_campo(3, "Custo de atraso", "custo_atraso")
-
-    def ler_dados_gerais():
         try:
-            qtd_lote = int(entradas["qtd_lote"].get())
-            qtd_chapas = int(entradas["qtd_chapas"].get())
-            custo_antecipacao = float(entradas["custo_antecipacao"].get())
-            custo_atraso = float(entradas["custo_atraso"].get())
+            tempo = float(tempo_txt)
         except ValueError:
-            messagebox.showerror("Erro", "Preencha os dados gerais com numeros validos.")
-            return None
-        return qtd_lote, qtd_chapas, custo_antecipacao, custo_atraso
-
-    def obter_matriz(nome):
-        return converter_matriz_para_int(sheets[nome].get_sheet_data())
-
-    def gerar_tabelas():
-        dados_gerais = ler_dados_gerais()
-        if dados_gerais is None:
             return
 
-        qtd_lote, qtd_chapas, _, _ = dados_gerais
+        inserir_chapa(nome, tempo)
 
-        for widget in aba_matrizes.winfo_children():
-            widget.destroy()
-        sheets.clear()
+        # Limpa entradas
+        self.nome.delete(0, tk.END)
+        self.tempo.delete(0, tk.END)
 
-        chapas = [f"Chapa {i + 1}" for i in range(qtd_chapas)]
-        lotes = [f"Lote {i + 1}" for i in range(qtd_lote)]
+        # Recarrega a lista de chapas
+        self.carregar_chapas()
 
-        sheets["tempo_processamento"] = criar_tabela(
-            aba_matrizes, "Tempo de processamento por chapa",
-            1, qtd_chapas, altura=90,
-            nomes_linhas=["Tempo"], nomes_colunas=chapas,
-        )
-        sheets["prazo_entrega"] = criar_tabela(
-            aba_matrizes, "Prazo de entrega por lote",
-            qtd_lote, 1, altura=120,
-            nomes_linhas=lotes, nomes_colunas=["Prazo"],
-        )
-        sheets["setup"] = criar_tabela(
-            aba_matrizes, "Matriz de setup",
-            qtd_chapas, qtd_chapas,
-            nomes_linhas=chapas, nomes_colunas=chapas,
-        )
-        configurar_diagonal_setup(sheets["setup"], qtd_chapas)
-
-        sheets["jobs"] = criar_tabela(
-            aba_matrizes, "Quantidade de chapas por lote",
-            qtd_lote, qtd_chapas,
-            nomes_linhas=lotes, nomes_colunas=chapas,
-        )
-
-        ttk.Button(aba_matrizes, text="Resolver", command=resolver).pack(anchor="e", pady=(8, 0))
-        notebook.select(aba_matrizes)
-
-    def resolver():
-        dados_gerais = ler_dados_gerais()
-        if dados_gerais is None:
+    def excluir_chapa(self):
+        selecionados = self.tabela.selection()
+        if not selecionados:
             return
 
-        qtd_lote, qtd_chapas, custo_antecipacao, custo_atraso = dados_gerais
+        for item in selecionados:
+            valores = self.tabela.item(item, "values")
+            if not valores:
+                continue
+
+            chapa_id = valores[0]
+            try:
+                chapa_id_int = int(chapa_id)
+            except (ValueError, TypeError):
+                continue
+
+            # Deleta do banco
+            deletar_chapa(chapa_id_int)
+
+        # Recarrega a lista após exclusões
+        self.carregar_chapas()
+
+
+class QuantidadeDialog:
+    def __init__(self, parent, chapas):
+        # chapas: list of tuples (id, nome, tempo)
+        self.top = tk.Toplevel(parent)
+        self.top.title("Quantidades por Chapa")
+        self.top.grab_set()
+
+        self.entries = []
+        for chapa in chapas:
+            frame = tk.Frame(self.top)
+            frame.pack(fill="x", padx=8, pady=4)
+            tk.Label(frame, text=f"{chapa[0]} - {chapa[1]} ({chapa[2]})", width=50, anchor="w").pack(side="left")
+            e = tk.Entry(frame, width=8)
+            e.insert(0, "1")
+            e.pack(side="right")
+            self.entries.append(e)
+
+        btn_frame = tk.Frame(self.top)
+        btn_frame.pack(fill="x", pady=6)
+        tk.Button(btn_frame, text="OK", command=self.on_ok).pack(side="right", padx=6)
+        tk.Button(btn_frame, text="Cancelar", command=self.on_cancel).pack(side="right")
+
+        self.result = None
+
+    def on_ok(self):
+        vals = []
+        for e in self.entries:
+            txt = e.get().strip()
+            try:
+                v = int(txt)
+                if v < 1:
+                    v = 1
+            except Exception:
+                v = 1
+            vals.append(v)
+        self.result = vals
+        self.top.destroy()
+
+    def on_cancel(self):
+        self.result = None
+        self.top.destroy()
+
+
+class JanelaPedidos:
+    def __init__(self, parent):
+        self.window = tk.Toplevel(parent)
+        self.window.title("Cadastro de Pedidos")
+        self.window.geometry("900x560")
+
+        form_frame = tk.Frame(self.window)
+        form_frame.pack(fill="x", padx=10, pady=8)
+
+        tk.Label(form_frame, text="Data de Término").grid(row=0, column=0, sticky="w")
+        self.data = tk.Entry(form_frame)
+        self.data.grid(row=1, column=0, sticky="we", padx=(0, 10))
+
+        tk.Label(form_frame, text="Custo Antecipação").grid(row=0, column=1, sticky="w")
+        self.custo_ante = tk.Entry(form_frame)
+        self.custo_ante.grid(row=1, column=1, sticky="we", padx=(0, 10))
+
+        tk.Label(form_frame, text="Custo Atraso").grid(row=0, column=2, sticky="w")
+        self.custo_atraso = tk.Entry(form_frame)
+        self.custo_atraso.grid(row=1, column=2, sticky="we")
+
+        form_frame.columnconfigure(0, weight=1)
+        form_frame.columnconfigure(1, weight=1)
+        form_frame.columnconfigure(2, weight=1)
+
+        tk.Label(self.window, text="Selecionar Chapas").pack(anchor="w", padx=10)
+        self.listbox_chapas = tk.Listbox(self.window, selectmode=tk.MULTIPLE, height=8)
+        self.listbox_chapas.pack(fill="x", padx=10)
+
+        btn_frame = tk.Frame(self.window)
+        btn_frame.pack(fill="x", padx=10, pady=8)
+        tk.Button(btn_frame, text="Salvar Pedido", command=self.salvar_pedido).pack(side="left")
+        tk.Button(btn_frame, text="Excluir Pedido Selecionado", command=self.excluir_pedido).pack(side="left", padx=8)
+        tk.Button(btn_frame, text="Ver Detalhes do Pedido", command=self.ver_detalhes_pedido).pack(side="left")
+
+        table_frame = tk.Frame(self.window)
+        table_frame.pack(fill="both", expand=True, padx=10, pady=8)
+
+        self.tabela = ttk.Treeview(
+            table_frame,
+            columns=("id", "data", "custo_ante", "custo_atraso", "tempo", "qtd_chapas", "qtd_total"),
+            show="headings",
+            height=10
+        )
+
+        self.tabela.heading("id", text="ID")
+        self.tabela.heading("data", text="Data término")
+        self.tabela.heading("custo_ante", text="Custo antecip.")
+        self.tabela.heading("custo_atraso", text="Custo atraso")
+        self.tabela.heading("tempo", text="Tempo proc.")
+        self.tabela.heading("qtd_chapas", text="Chapas distintas")
+        self.tabela.heading("qtd_total", text="Qtd total")
+
+        self.tabela.column("id", width=50)
+        self.tabela.column("data", width=140)
+        self.tabela.column("custo_ante", width=110)
+        self.tabela.column("custo_atraso", width=110)
+        self.tabela.column("tempo", width=100)
+        self.tabela.column("qtd_chapas", width=100)
+        self.tabela.column("qtd_total", width=100)
+
+        self.tabela.pack(fill="both", expand=True)
+        self.tabela.bind("<<TreeviewSelect>>", self.on_pedido_select)
+
+        detail_label = tk.Label(self.window, text="Chapas no pedido selecionado")
+        detail_label.pack(anchor="w", padx=10)
+
+        self.tabela_detalhes = ttk.Treeview(
+            self.window,
+            columns=("id", "nome", "tempo", "quantidade", "subtotal"),
+            show="headings",
+            height=6
+        )
+        self.tabela_detalhes.heading("id", text="ID")
+        self.tabela_detalhes.heading("nome", text="Nome")
+        self.tabela_detalhes.heading("tempo", text="Tempo" )
+        self.tabela_detalhes.heading("quantidade", text="Quantidade")
+        self.tabela_detalhes.heading("subtotal", text="Subtotal")
+
+        self.tabela_detalhes.column("id", width=50)
+        self.tabela_detalhes.column("nome", width=180)
+        self.tabela_detalhes.column("tempo", width=80)
+        self.tabela_detalhes.column("quantidade", width=80)
+        self.tabela_detalhes.column("subtotal", width=90)
+
+        self.tabela_detalhes.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+
+        self.carregar_chapas_disponiveis()
+        self.carregar_pedidos()
+
+    def carregar_chapas_disponiveis(self):
+        self.listbox_chapas.delete(0, tk.END)
+        self.chapas_disponiveis = listar_chapas()
+        for chapa in self.chapas_disponiveis:
+            texto = f"{chapa[0]} - {chapa[1]} ({chapa[2]})"
+            self.listbox_chapas.insert(tk.END, texto)
+
+    def carregar_pedidos(self):
+        for item in self.tabela.get_children():
+            self.tabela.delete(item)
+
+        pedidos = listar_pedidos()
+        for ped in pedidos:
+            # ped: (id, data_termino, custo_antecipacao, custo_atraso, tempo_processamento, qtd_chapas, qtd_total)
+            self.tabela.insert("", tk.END, values=ped)
+
+        self.limpar_detalhes()
+
+    def salvar_pedido(self):
+        data_txt = self.data.get().strip()
+        custo_ante_txt = self.custo_ante.get().strip()
+        custo_atraso_txt = self.custo_atraso.get().strip()
 
         try:
-            tempo_processamento = obter_matriz("tempo_processamento")[0]
-            prazo_entrega = obter_matriz("prazo_entrega")
-            setup = obter_matriz("setup")
-            matriz_jobs = obter_matriz("jobs")
-        except ValueError as erro:
-            messagebox.showerror("Erro nos dados", str(erro))
+            custo_ante = float(custo_ante_txt) if custo_ante_txt else 0.0
+            custo_atraso = float(custo_atraso_txt) if custo_atraso_txt else 0.0
+        except ValueError:
             return
 
-        # Zera a diagonal do setup (uma chapa para ela mesma nao tem troca).
-        for i in range(len(setup)):
-            setup[i][i] = 0
+        selecionados = self.listbox_chapas.curselection()
+        lista_chapas = []
+        if selecionados:
+            chapas_selecionadas = [self.chapas_disponiveis[idx] for idx in selecionados]
+            dlg = QuantidadeDialog(self.window, chapas_selecionadas)
+            self.window.wait_window(dlg.top)
+            if dlg.result is None:
+                return
 
-        # Guarda as quantidades originais (a matriz e alterada logo abaixo).
-        matriz_quantidades = [list(linha) for linha in matriz_jobs]
+            for chapa, qty in zip(chapas_selecionadas, dlg.result):
+                try:
+                    chapa_id = int(chapa[0])
+                    q = int(qty)
+                    if q < 1:
+                        q = 1
+                except Exception:
+                    continue
+                lista_chapas.append((chapa_id, q))
 
-        pedido = Pedido(qtd_lote, qtd_chapas, custo_antecipacao, custo_atraso)
-        pedido.tempo_processamento_chapa = tempo_processamento
+        inserir_pedido(data_txt, custo_atraso, custo_ante, lista_chapas)
 
-        for i in range(pedido.qtd_lote):
-            valor = prazo_entrega[i][0]
-            for j in range(pedido.qtd_chapas):
-                pedido.prazo_entrega_job[i][j] = valor
+        self.data.delete(0, tk.END)
+        self.custo_ante.delete(0, tk.END)
+        self.custo_atraso.delete(0, tk.END)
+        self.listbox_chapas.selection_clear(0, tk.END)
 
-        pedido.setup_jobs = preenche_matriz_setup_completa(pedido, setup)
-        pedido.tempo_processamento_job = multiplicar_matriz_jobs(
-            matriz_jobs, pedido.tempo_processamento_chapa,
-        )
+        self.carregar_chapas_disponiveis()
+        self.carregar_pedidos()
 
-        PASTA_PULP.mkdir(exist_ok=True)
-        caminho_dat = gerar_dat(pedido, CAMINHO_DAT)
-        atualizar_texto(dat_texto, caminho_dat.read_text(encoding="utf-8"))
+    def excluir_pedido(self):
+        selecionados = self.tabela.selection()
+        if not selecionados:
+            return
 
-        resultado = resolver_pedido_com_pulp(pedido)
+        for item in selecionados:
+            valores = self.tabela.item(item, "values")
+            if not valores:
+                continue
+            try:
+                pedido_id = int(valores[0])
+            except Exception:
+                continue
+            deletar_pedido(pedido_id)
 
-        if resultado.status != "Optimal":
-            atualizar_texto(
-                resultado_texto,
-                "O PuLP/CBC nao confirmou uma solucao otima.\n\n"
-                f"Status: {resultado.status}\n\n"
-                f"{resultado.mensagem}",
+        self.carregar_pedidos()
+
+    def on_pedido_select(self, event):
+        self.ver_detalhes_pedido()
+
+    def ver_detalhes_pedido(self):
+        selecionados = self.tabela.selection()
+        if not selecionados:
+            self.limpar_detalhes()
+            return
+
+        item = selecionados[0]
+        valores = self.tabela.item(item, "values")
+        if not valores:
+            self.limpar_detalhes()
+            return
+
+        try:
+            pedido_id = int(valores[0])
+        except Exception:
+            self.limpar_detalhes()
+            return
+
+        setup_dict = {
+                (origem, destino): tempo
+                for origem, destino, tempo in listar_setups()
+            }
+
+
+
+        detalhes = listar_chapas_por_pedido(pedido_id)
+        self.tabela_detalhes.delete(*self.tabela_detalhes.get_children())
+        for i, (chapa_id, nome, tempo, quantidade) in enumerate(detalhes):
+
+            subtotal = float(tempo) * int(quantidade)
+
+            if i < len(detalhes) - 1:
+                prox_chapa_id = detalhes[i + 1][0]
+                subtotal += setup_dict.get(
+                    (chapa_id, prox_chapa_id),
+                    0
+                )
+
+            self.tabela_detalhes.insert(
+                "",
+                tk.END,
+                values=(
+                    chapa_id,
+                    nome,
+                    tempo,
+                    quantidade,
+                    subtotal
+                )
             )
-            notebook.select(aba_resultado)
-            return
 
-        relatorio = montar_resumo_otimo(pedido, caminho_dat, resultado, matriz_quantidades)
-        CAMINHO_RELATORIO.write_text(relatorio, encoding="utf-8")
-        atualizar_texto(resultado_texto, relatorio)
-        notebook.select(aba_resultado)
+    def limpar_detalhes(self):
+        self.tabela_detalhes.delete(*self.tabela_detalhes.get_children())
 
-    ttk.Button(aba_dados, text="Gerar tabelas", command=gerar_tabelas).grid(
-        row=4, column=0, columnspan=2, sticky="w", pady=(14, 0)
-    )
 
-    root.mainloop()
+class JanelaSetups:
+    def __init__(self, parent):
+        self.window = tk.Toplevel(parent)
+        self.window.title("Configurar Setups")
+        self.window.geometry("900x600")
+
+        self.chapas = listar_chapas()
+
+        canvas = tk.Canvas(self.window)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar_v = tk.Scrollbar(self.window, orient=tk.VERTICAL, command=canvas.yview)
+        scrollbar_v.pack(side=tk.RIGHT, fill=tk.Y)
+        scrollbar_h = tk.Scrollbar(self.window, orient=tk.HORIZONTAL, command=canvas.xview)
+        scrollbar_h.pack(side=tk.BOTTOM, fill=tk.X)
+        canvas.configure(yscrollcommand=scrollbar_v.set, xscrollcommand=scrollbar_h.set)
+
+        frame = tk.Frame(canvas)
+        canvas.create_window((0, 0), window=frame, anchor='nw')
+
+        setups = { (o,d):t for o,d,t in listar_setups() }
+        self.entries = {}
+
+        # headers
+        tk.Label(frame, text="").grid(row=0, column=0, padx=4, pady=4)
+        for j, chapa_col in enumerate(self.chapas, start=1):
+            tk.Label(frame, text=f"{chapa_col[0]}\n{chapa_col[1]}", borderwidth=1, relief="ridge", width=12).grid(row=0, column=j, padx=2, pady=2)
+
+        for i, chapa_row in enumerate(self.chapas, start=1):
+            tk.Label(frame, text=f"{chapa_row[0]} {chapa_row[1]}", borderwidth=1, relief="ridge", width=18).grid(row=i, column=0, padx=2, pady=2)
+            for j, chapa_col in enumerate(self.chapas, start=1):
+                origem = chapa_row[0]
+                destino = chapa_col[0]
+                key = (origem, destino)
+                val = setups.get(key, 0)
+                e = tk.Entry(frame, width=10)
+                if origem == destino:
+                    e.insert(0, "0")
+                    e.configure(state="disabled")
+                else:
+                    e.insert(0, str(val))
+                e.grid(row=i, column=j, padx=2, pady=2)
+                self.entries[key] = e
+
+        frame.update_idletasks()
+        canvas.config(scrollregion=canvas.bbox('all'))
+
+        btn_frame = tk.Frame(self.window)
+        btn_frame.pack(fill="x", pady=6)
+        tk.Button(btn_frame, text="Salvar Setups", command=self.salvar_setups).pack(side="left", padx=6)
+        tk.Button(btn_frame, text="Fechar", command=self.window.destroy).pack(side="left")
+
+    def salvar_setups(self):
+        for (origem, destino), entry in self.entries.items():
+            if origem == destino:
+                continue
+            txt = entry.get().strip()
+            try:
+                tempo = float(txt) if txt else 0.0
+            except ValueError:
+                tempo = 0.0
+            atualizar_setup(origem, destino, tempo)
+
+        self.window.destroy()

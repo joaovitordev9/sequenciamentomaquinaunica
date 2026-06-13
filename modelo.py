@@ -1,1 +1,3 @@
-import pulp
+
+
+#Quando nois pegar pra fazer esse trem junto...
