@@ -39,6 +39,7 @@ for i in range(n):
 prob += obj
 
 # Restrições
+
 for i in range(n):
 
     for j in range(n):
@@ -49,9 +50,7 @@ for i in range(n):
         prob += y[i][j] + y[j][i] <= 1
     prob += s[i]+P[i]+e[i]-t[i] == D[i]
         
-        
-
-
+#a
 # Resolve
 prob.solve()
 
