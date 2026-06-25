@@ -3,7 +3,7 @@ import dados as dt
 
 
 # Cria o problema
-prob = LpProblem("Sequenciamento Maquina", LpMinimize)
+prob = LpProblem("Sequenciamento_Maquina", LpMinimize)
 
 n = dt.entrada.n  # número de jobs
 P = dt.entrada.P  # tempo processamento
@@ -45,7 +45,7 @@ for i in range(n):
         if i == j:
             continue
         
-        prob += s[j] - s[i] - ((M + S[(i,j)]) * y[i][j]) >= P[i] - M
+        prob += s[j] - s[i] - ((M + S[i][j]) * y[i][j]) >= P[i] - M
         prob += y[i][j] + y[j][i] <= 1
     prob += s[i]+P[i]+e[i]-t[i] == D[i]
         
