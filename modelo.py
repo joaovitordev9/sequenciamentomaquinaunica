@@ -2,13 +2,11 @@ from pulp import *
 import dados as dt
 
 
-
-
 # Cria o problema
 prob = LpProblem("Sequenciamento Maquina", LpMinimize)
 
 # Variáveis
-variaveis = dt.Entrada_Modelo()
+variaveis = dt.Variaveis_decisao(None, None, None, None, None)
 
 for i,job in enumerate(dt.jobs): 
     x = LpVariable(f"x{i}", lowBound=0)

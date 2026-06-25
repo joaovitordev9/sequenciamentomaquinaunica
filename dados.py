@@ -28,7 +28,7 @@ class Entrada_Modelo:
         self.a = a #tupla custo antecipacao dos jobs
         self.b = b #tupla custo atraso dos jobs
         self.M = 99999
-class Saida_Modelo:
+class Variaveis_decisao:
     def __init__(self, s, y, e, t, Z):
         self.s = s #tupla tempo inicio do processamento
         self.y = y #matriz antecedencia
@@ -47,7 +47,7 @@ def chapas_por_pedido(pedido_id):
     chapas = []
     dados_chapas_pedido = listar_chapas_por_pedido(pedido_id)
     for id, tipo, tempo_processamento_chapa, quantidade in dados_chapas_pedido:
-        chapas.append(Chapa(id, tipo, tempo_processamento * quantidade))
+        chapas.append(Chapa(id, tipo, tempo_processamento_chapa * quantidade))
 
     return chapas
 
