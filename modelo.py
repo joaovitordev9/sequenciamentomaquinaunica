@@ -19,7 +19,7 @@ prob += 3*x + 2*y
 prob += x + y <= 4
 prob += x <= 2
 prob += y <= 3
-
+#a
 # Resolve
 prob.solve()
 
